@@ -103,3 +103,5 @@ frontend/node_modules/.cache/default-development/8.pack
 # Environment files
 *.env
 *.env.*
+backend/db.sqlite3
+backend/db_backup.sqlite3
