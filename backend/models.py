@@ -16,7 +16,6 @@ class User(Base):
 
     expenses = relationship("Expense", back_populates="user")
     custom_budget_categories = relationship("CustomBudgetCategory", back_populates="user")
-    monthly_budgets = relationship("MonthlyBudget", back_populates="user")
 
 class Expense(Base):
     __tablename__ = "expenses"
@@ -31,20 +30,6 @@ class Expense(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     
     user = relationship("User", back_populates="expenses")
-
-
-class MonthlyBudget(Base):
-    """User-defined fixed monthly budget with optional savings carryover."""
-    __tablename__ = "monthly_budgets"
-
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
-    month = Column(Integer, nullable=False, index=True)
-    year = Column(Integer, nullable=False, index=True)
-    amount = Column(Float, nullable=False)  # The budget the user manually set
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-
-    user = relationship("User", back_populates="monthly_budgets")
 
 
 class CustomBudgetCategory(Base):

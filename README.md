@@ -4,7 +4,7 @@ FinSense is a full-stack finance intelligence platform built to help users track
 
 ## Project Overview 🎯
 
-The core goal of FinFusion is to move beyond simple expense logging and into explainable financial analysis. Instead of showing only raw transaction lists, the application turns user data into dashboards, category analytics, forecast simulations, and insight panels that help users understand how and where they spend.
+The core goal of FinSense is to move beyond simple expense logging and into explainable financial analysis. Instead of showing only raw transaction lists, the application turns user data into dashboards, category analytics, forecast simulations, and insight panels that help users understand how and where they spend.
 
 The system is designed around three ideas:
 
@@ -56,7 +56,7 @@ The system is designed around three ideas:
 
 ## 🧠Machine Learning and Intelligence Layer
 
-FinFusion includes an LSTM-based forecasting pipeline that uses historical spending sequences to simulate likely future spending behavior. The model is designed to learn temporal patterns from transaction history, such as recurring spikes, day-based rhythm, and broader spending drift.
+FinSense includes an LSTM-based forecasting pipeline that uses historical spending sequences to simulate likely future spending behavior. The model is designed to learn temporal patterns from transaction history, such as recurring spikes, day-based rhythm, and broader spending drift.
 
 The forecasting pipeline includes:
 
@@ -104,7 +104,7 @@ This information is passed back to the frontend, where the user can verify and e
 
 ## 🏗️Application Architecture
 
-FinFusion follows a split frontend-backend architecture:
+FinSense follows a split frontend-backend architecture:
 
 - the frontend is responsible for authentication flow, dashboards, charts, and user interaction
 - the backend is responsible for persistence, filtering, analytics, forecasting, and OCR parsing
@@ -126,7 +126,7 @@ The backend Docker configuration includes OCR system dependencies so receipt sca
 
 ## 📌Purpose 
 
-FinFusion was built as an academic full-stack intelligent finance project that demonstrates how traditional expense tracking can be extended with:
+FinSense was built as an academic full-stack intelligent finance project that demonstrates how traditional expense tracking can be extended with:
 
 - machine learning
 - OCR
