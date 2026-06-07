@@ -1,8 +1,6 @@
-# FinFusion - Ai Powered Personal Finance Tracker ✨🤖
+# FinSense 
 
-FinFusion is a full-stack personal finance intelligence platform built to help users track expenses, understand spending behavior, and explore predictive insights through an interactive dashboard. The project combines modern frontend design with backend analytics, machine learning-based forecasting, and OCR-assisted expense entry to create a more intelligent expense management experience.
-
-Click here to read our review paper: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=6336338
+FinSense is a full-stack finance intelligence platform built to help users track expenses, understand spending behavior, and explore predictive insights through an interactive dashboard. The project combines modern frontend design with backend analytics, machine learning-based forecasting, and OCR-assisted expense entry to create a more intelligent expense management experience.
 
 ## Project Overview 🎯
 
@@ -20,54 +18,41 @@ The system is designed around three ideas:
 - Secure user authentication system
 - Demo account access for quick testing
 - Separate environments for preloaded and manual data usage
-<p align="center">
-  <img src="Screenshots/Login page.png" width="800"/>
-</p>
+
 
 ### Expense Management 💸
 - Add, edit, and delete personal expenses
 - Separate demo and user-entered data modes
 - Categorized transaction history across food, rent, utilities, travel, healthcare, and more
-<p align="center">
-  <img src="Screenshots/category.jpeg" width="45%"/>
-  <img src="Screenshots/expense management.jpeg" width="47%"/>
-</p>
+
 
 ### Dashboard Analytics 📊
 - Monthly spending summaries
 - Category breakdowns and budget tracking
 - Recent expense activity
 - Data-driven insight cards generated from historical behavior
-<p align="center">
-  <img src="Screenshots/Dashboard page.png" width="800"/>
-</p>
+
 
 ### Forecasting 📈
 - LSTM-based time-series forecasting for future spending projection
 - Recursive multi-day prediction pipeline
 - Forecast trend detection, peak day estimation, and confidence scoring
 - Explainable forecast UI with projected totals, category pressure, and context panels
-<p align="center">
-  <img src="Screenshots/Forecast page.png" width="800"/>
-</p>
+
 
 ### Receipt Scanning with OCR 🔍
 - Upload receipt images directly from the dashboard
 - OCR extraction of total amount, category, and spending description
 - Editable verification step before final submission
 - Manual fallback when OCR confidence is low or extraction fails
-<p align="center">
-  <img src="Screenshots/OCR Receipt scanner.png" width="800"/>
-</p>
+
 
 ### Historical Insights 📆
 - Monthly trend visualization
 - Category trend comparison over time
 - Top-spending category ranking
 - Month-over-month analysis for spending changes
-<p align="center">
-  <img src="Screenshots/Insights page.png" width="800"/>
-</p>
+
 
 ## 🧠Machine Learning and Intelligence Layer
 
@@ -150,4 +135,4 @@ FinFusion was built as an academic full-stack intelligent finance project that d
 
 Rather than positioning itself as a production-grade financial advisory system, the project is intended as a practical demonstration of intelligent personal finance tooling with a strong focus on usability, interpretability, and end-to-end system design.
 
-Thank you for stopping by 💕
+Thank you for stopping by 
