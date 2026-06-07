@@ -50,6 +50,7 @@ async def get_expenses(
     db: Session = Depends(get_db)
 ):
     expenses = get_filtered_expenses(db, current_user)
+    expenses = sorted(expenses, key=lambda e: e.created_at, reverse=True)
     
     expense_list = [{
         "id": e.id,

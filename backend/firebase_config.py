@@ -10,9 +10,14 @@ Steps:
 """
 
 import os
+import time
 import logging
 from pathlib import Path
 from dotenv import load_dotenv
+
+# Force load .env immediately at import time, overriding any system env vars
+_env_path = Path(__file__).parent / ".env"
+load_dotenv(_env_path, override=True)
 
 import requests
 import jwt as pyjwt
@@ -32,7 +37,9 @@ _key_cache: dict = {}
 
 def _get_project_id() -> str:
     load_dotenv(Path(__file__).parent / ".env", override=True)
-    return os.getenv("FIREBASE_PROJECT_ID", "").strip()
+    pid = os.getenv("FIREBASE_PROJECT_ID", "").strip()
+    logger.info(f"[Firebase] Using project_id='{pid}'")
+    return pid
 
 
 def _get_public_keys(force_refresh: bool = False) -> dict:
@@ -90,6 +97,17 @@ def verify_google_token(id_token: str) -> dict:
 
     # 3. Verify signature + standard JWT claims
     issuer = f"https://securetoken.google.com/{project_id}"
+
+    # Log timing info for debugging clock drift
+    try:
+        unverified = pyjwt.decode(id_token, options={"verify_signature": False})
+        token_iat = unverified.get("iat", "?")
+        token_exp = unverified.get("exp", "?")
+        server_time = int(time.time())
+        logger.info(f"[Firebase] project_id={project_id!r} token_iat={token_iat} token_exp={token_exp} server_time={server_time} drift={server_time - token_iat if isinstance(token_iat, int) else '?'}s")
+    except Exception:
+        pass
+
     try:
         claims = pyjwt.decode(
             id_token,
@@ -97,14 +115,15 @@ def verify_google_token(id_token: str) -> dict:
             algorithms=["RS256"],
             audience=project_id,
             issuer=issuer,
-            options={"verify_exp": True},
+            leeway=60,
+            options={"verify_exp": True, "verify_iat": False},
         )
     except pyjwt.ExpiredSignatureError:
-        raise ValueError("Google token has expired — please sign in again.")
+        raise ValueError("Your session has expired — please sign in again.")
     except pyjwt.InvalidAudienceError:
-        raise ValueError(f"Token audience mismatch. Expected '{project_id}'.")
+        raise ValueError(f"Token audience mismatch. Expected project '{project_id}'.")
     except pyjwt.InvalidIssuerError:
-        raise ValueError(f"Token issuer mismatch. Expected '{issuer}'.")
+        raise ValueError(f"Token issuer mismatch. Expected 'https://securetoken.google.com/{project_id}'.")
     except pyjwt.PyJWTError as exc:
         raise ValueError(f"Token verification failed: {exc}")
 

@@ -105,21 +105,46 @@ export default function Budgets() {
   const [adjustDialog, setAdjustDialog] = useState({ open: false, category: '', limit: '' });
   const [addCategoryDialog, setAddCategoryDialog] = useState({ open: false, category: '', limit: '' });
   const [expandedCards, setExpandedCards] = useState({});
+  const [monthlyBudget, setMonthlyBudget] = useState(null);
+  const [setBudgetDialog, setSetBudgetDialog] = useState({ open: false, amount: '' });
 
-  // Month context
+  const now = new Date();
+  // Month context — initialize to current month immediately, update after API responds
   const [availableMonths, setAvailableMonths] = useState([]);
-  const [selectedMonth, setSelectedMonth] = useState(null);
-  const [selectedYear, setSelectedYear] = useState(null);
+  const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
+  const [selectedYear, setSelectedYear] = useState(now.getFullYear());
 
   useEffect(() => { initContext(); }, []);
 
   async function initContext() {
     const res = await api.getAvailableMonths();
-    const months = res?.data || [];
     const defaultCtx = res?.metadata?.default || {};
+    const now = new Date();
+
+    // Always generate 12 months, merging in real counts from API
+    const monthNames = ['January','February','March','April','May','June',
+                        'July','August','September','October','November','December'];
+    const apiMonths = res?.data || [];
+    const apiMap = {};
+    apiMonths.forEach(m => { apiMap[`${m.year}-${m.month}`] = m.count || 0; });
+
+    const months = Array.from({ length: 12 }, (_, i) => {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const m = d.getMonth() + 1;
+      const y = d.getFullYear();
+      return {
+        month: m,
+        year: y,
+        label: `${monthNames[d.getMonth()]} ${y}`,
+        count: apiMap[`${y}-${m}`] || 0,
+      };
+    });
+
     setAvailableMonths(months);
-    setSelectedMonth(defaultCtx.month || 12);
-    setSelectedYear(defaultCtx.year || 2024);
+    if (defaultCtx.month && defaultCtx.year) {
+      setSelectedMonth(defaultCtx.month);
+      setSelectedYear(defaultCtx.year);
+    }
   }
 
   useEffect(() => {
@@ -139,6 +164,9 @@ export default function Budgets() {
       setBudgets(budgetRes?.data?.budget || []);
       setBudgetMeta(budgetRes?.metadata || {});
       setCurrentData(currentRes);
+
+      const monthlyRes = await api.getMonthlyBudget(m, y);
+      setMonthlyBudget(monthlyRes?.data || null);
 
       const allInsights = suggestionsRes?.data || [];
       const monthComp = allInsights.find(i => i.type === 'month_comparison');
@@ -168,6 +196,27 @@ export default function Budgets() {
       await loadData(selectedMonth, selectedYear);
     } catch (err) {
       toast.error('Failed to delete expense');
+    }
+  }
+
+  async function handleSetMonthlyBudget() {
+    const amount = parseFloat(setBudgetDialog.amount);
+    if (isNaN(amount) || amount < 0) {
+      toast.error('Enter a valid amount');
+      return;
+    }
+    const now = new Date();
+    const month = selectedMonth ?? (now.getMonth() + 1);
+    const year = selectedYear ?? now.getFullYear();
+    try {
+      await api.setMonthlyBudget(month, year, amount);
+      toast.success('Monthly budget saved');
+      setSetBudgetDialog({ open: false, amount: '' });
+      const res = await api.getMonthlyBudget(month, year);
+      setMonthlyBudget(res?.data || null);
+    } catch (err) {
+      console.error('setMonthlyBudget error:', err);
+      toast.error(err?.message || 'Failed to save budget');
     }
   }
 
@@ -207,8 +256,31 @@ export default function Budgets() {
     }
   }
 
-  // Computed totals from backend data
-  const visibleBudgets = budgets;
+  // All standard categories — always show these regardless of spending
+  const ALL_CATEGORIES = [
+    'Food', 'Transport', 'Shopping', 'Entertainment', 'Utilities',
+    'Healthcare', 'Rent', 'Education', 'Travel', 'Fitness', 'Pets', 'Other', 'Miscellaneous'
+  ];
+
+  // Merge backend budgets with full category list so every category always appears
+  const budgetMap = {};
+  budgets.forEach(b => { budgetMap[b.category.toLowerCase()] = b; });
+
+  const visibleBudgets = [
+    // First: all categories from backend (have real data)
+    ...budgets,
+    // Then: add any standard category not already in the list
+    ...ALL_CATEGORIES
+      .filter(cat => !budgetMap[cat.toLowerCase()])
+      .map(cat => ({
+        category: cat,
+        limit: 0,
+        current: 0,
+        percentage: 0,
+        is_custom: false,
+        basis: 'no_data',
+      }))
+  ];
   const monthlyLimit = visibleBudgets.reduce((s, b) => s + (b.limit || 0), 0);
   const monthlySpent = visibleBudgets.reduce((s, b) => s + (b.current || 0), 0);
   const visibleExpenses = (currentData?.data?.categories || []).flatMap(cat => cat.expenses || []);
@@ -225,7 +297,10 @@ export default function Budgets() {
   const totalSpent = trendMode === 'weekly' ? weeklySpent : monthlySpent;
   const totalLeft = Math.max(0, totalLimit - totalSpent);
   const utilizationPct = totalLimit > 0 ? (totalSpent / totalLimit) * 100 : 0;
-  const periodLabel = budgetMeta?.label || currentData?.metadata?.label || 'Current';
+  const MONTH_NAMES = ['January','February','March','April','May','June',
+                       'July','August','September','October','November','December'];
+  const periodLabel = budgetMeta?.label || currentData?.metadata?.label || 
+    (selectedMonth && selectedYear ? `${MONTH_NAMES[selectedMonth-1]} ${selectedYear}` : 'Current');
   const displayPeriodLabel = trendMode === 'weekly' ? formatWeeklyLabel(referenceDate) : periodLabel;
 
   if (loading) {
@@ -281,7 +356,7 @@ export default function Budgets() {
               <SelectContent className="rounded-2xl border-0 bg-white shadow-[0_24px_60px_rgba(15,23,42,0.18)]">
                 {availableMonths.map((m) => (
                   <SelectItem key={`${m.year}-${m.month}`} value={`${m.year}-${m.month}`} className="rounded-xl">
-                    {m.label} ({m.count})
+                    {m.label}{m.count > 0 ? ` (${m.count})` : ''}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -291,6 +366,58 @@ export default function Budgets() {
             </Button>
           </div>
         </div>
+
+        {/* ROLLING MONTHLY BUDGET CARD */}
+        <Card className="rounded-[28px] border-0 bg-white shadow-sm p-6 mb-6">
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1">Current Month Budget</p>
+              <p className="text-3xl font-bold text-slate-900">{formatCurrency(monthlyBudget?.available ?? 0)}</p>
+              <p className="text-sm text-slate-400 mt-0.5">Available Budget for {displayPeriodLabel}</p>
+            </div>
+            <button
+              className="inline-flex items-center gap-1.5 text-sm text-indigo-500 font-semibold hover:text-indigo-700 transition-colors bg-indigo-50 hover:bg-indigo-100 px-4 py-2 rounded-xl"
+              onClick={() => setSetBudgetDialog({ open: true, amount: monthlyBudget?.set_amount?.toFixed(0) || '' })}
+            >
+              <Pencil className="w-3.5 h-3.5" />
+              {monthlyBudget?.has_budget ? 'Edit Budget' : 'Set Budget'}
+            </button>
+          </div>
+
+          {monthlyBudget?.has_budget ? (
+            <div className="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div className="bg-slate-50 rounded-2xl p-4">
+                <p className="text-[11px] text-slate-400 uppercase font-bold tracking-wider mb-1">Monthly Budget</p>
+                <p className="text-lg font-bold text-slate-900">{formatCurrency(monthlyBudget.set_amount)}</p>
+              </div>
+              <div className={`rounded-2xl p-4 ${monthlyBudget.carry_forward >= 0 ? 'bg-emerald-50' : 'bg-red-50'}`}>
+                <p className={`text-[11px] uppercase font-bold tracking-wider mb-1 ${monthlyBudget.carry_forward >= 0 ? 'text-emerald-500' : 'text-red-400'}`}>
+                  {monthlyBudget.carry_forward >= 0 ? 'Carry Forward' : 'Overspend Deducted'}
+                </p>
+                <p className={`text-lg font-bold ${monthlyBudget.carry_forward >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                  {monthlyBudget.carry_forward >= 0 ? '+' : ''}{formatCurrency(monthlyBudget.carry_forward)}
+                </p>
+              </div>
+              <div className="bg-slate-50 rounded-2xl p-4">
+                <p className="text-[11px] text-slate-400 uppercase font-bold tracking-wider mb-1">Spent</p>
+                <p className="text-lg font-bold text-slate-900">{formatCurrency(monthlyBudget.spent)}</p>
+              </div>
+              <div className={`rounded-2xl p-4 ${monthlyBudget.remaining >= 0 ? 'bg-slate-50' : 'bg-red-50'}`}>
+                <p className="text-[11px] text-slate-400 uppercase font-bold tracking-wider mb-1">Remaining</p>
+                <p className={`text-lg font-bold ${monthlyBudget.remaining >= 0 ? 'text-slate-900' : 'text-red-600'}`}>
+                  {formatCurrency(monthlyBudget.remaining)}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <p className="mt-4 text-sm text-slate-400 italic">Set a monthly budget to track carry-forward and remaining balance.</p>
+          )}
+
+          <div className="mt-4 flex flex-wrap gap-4 text-xs text-slate-400">
+            <span>💡 Unused budget automatically carries forward.</span>
+            <span>⚠️ Overspending is deducted from next month's budget.</span>
+          </div>
+        </Card>
 
         {/* OVERVIEW CARD */}
         <Card className="relative overflow-hidden rounded-[28px] border-0 bg-gradient-to-br from-[#e5dcff] via-[#efe6ff] to-[#e7dcff] p-5 sm:p-8 mb-10 shadow-[0_28px_80px_rgba(109,40,217,0.16)]" data-testid="budget-overview-card">
@@ -361,93 +488,99 @@ export default function Budgets() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5" data-testid="budget-categories-grid">
           {visibleBudgets.map((budget, idx) => {
             const pct = budget.percentage || 0;
-            const status = getStatusInfo(pct);
-            const { Icon, colors: catColors } = getCategoryVisual(budget.category);
+            const spent = budget.current || 0;
+            const limit = budget.limit || 0;
+            const remaining = Math.max(0, limit - spent);
             const isOver = pct > 100;
-            const overAmount = Math.max(0, (budget.current || 0) - (budget.limit || 0));
-            const barColor = status.barOverride || catColors.bar;
+            const isNear = pct >= 75 && pct <= 100;
+            const { Icon, colors: catColors } = getCategoryVisual(budget.category);
+
+            // Status config
+            const statusConfig = isOver
+              ? { label: 'Over Budget', badgeClass: 'bg-red-100 text-red-600', barClass: 'bg-red-500', remainingClass: 'text-red-600' }
+              : isNear
+              ? { label: 'Near Limit', badgeClass: 'bg-orange-100 text-orange-600', barClass: 'bg-orange-400', remainingClass: 'text-orange-600' }
+              : { label: 'On Track', badgeClass: 'bg-emerald-100 text-emerald-600', barClass: 'bg-emerald-500', remainingClass: 'text-emerald-600' };
 
             return (
               <Card
                 key={budget.category + idx}
-                className="rounded-[24px] border-0 bg-white shadow-sm hover:shadow-md transition-shadow p-5 sm:p-6 flex flex-col"
+                className="rounded-[24px] border-0 bg-white shadow-sm hover:shadow-md transition-shadow p-5 flex flex-col gap-4"
                 data-testid={`budget-card-${budget.category}`}
               >
-                {/* Icon */}
-                <div className={`h-12 w-12 rounded-2xl ${catColors.bg} flex items-center justify-center mb-5`}>
-                  <Icon className={`w-5 h-5 ${catColors.icon}`} />
+                {/* Header: icon + name + status badge */}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-3">
+                    <div className={`h-10 w-10 rounded-xl ${catColors.bg} flex items-center justify-center flex-shrink-0`}>
+                      <Icon className={`w-4 h-4 ${catColors.icon}`} />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-bold text-slate-900 leading-tight">{budget.category}</h3>
+                      {budget.is_custom && (
+                        <span className="text-[10px] font-bold text-violet-500 uppercase tracking-wide">Custom</span>
+                      )}
+                    </div>
+                  </div>
+                  <span className={`text-[10px] font-bold uppercase px-2.5 py-1 rounded-full flex-shrink-0 ${statusConfig.badgeClass}`} data-testid={`status-${budget.category}`}>
+                    {statusConfig.label}
+                  </span>
                 </div>
 
-                {/* Category name + budget */}
-                <h3 className="text-xl font-bold text-slate-900 mb-1">{budget.category}</h3>
-                <p className="text-base text-slate-600 mb-1">{formatCurrency(budget.limit)} Budget</p>
-                {budget.isCustom && (
-                  <span className="mb-3 inline-flex w-fit rounded-full bg-violet-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-violet-600">
-                    Custom
-                  </span>
-                )}
-
-                {/* Adjust button */}
-                <button
-                  className="inline-flex items-center gap-1 text-[11px] text-indigo-500 font-bold uppercase tracking-wider mb-5 hover:text-indigo-700 transition-colors w-fit"
-                  onClick={() => setAdjustDialog({ open: true, category: budget.category, limit: budget.limit?.toFixed(0) || '0' })}
-                  data-testid={`adjust-${budget.category}`}
-                >
-                  <Pencil className="w-3 h-3" /> Adjust
-                </button>
+                {/* Budget / Spent / Remaining rows */}
+                <div className="space-y-1.5 text-sm">
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-400 font-medium">Budget</span>
+                    <span className="font-semibold text-slate-700">{formatCurrency(limit)}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-400 font-medium">Spent</span>
+                    <span className={`font-semibold ${isOver ? 'text-red-600' : 'text-slate-700'}`} data-testid={`spent-${budget.category}`}>{formatCurrency(spent)}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-400 font-medium">Remaining</span>
+                    <span className={`font-bold ${statusConfig.remainingClass}`}>
+                      {isOver ? `−${formatCurrency(spent - limit)}` : formatCurrency(remaining)}
+                    </span>
+                  </div>
+                </div>
 
                 {/* Progress bar */}
-                <div className="w-full h-2 rounded-full bg-slate-100 overflow-hidden mb-4">
-                  <div
-                    className={`h-full rounded-full transition-all duration-500 ${barColor}`}
-                    style={{ width: `${Math.min(pct, 100)}%` }}
-                  />
-                </div>
-
-                {/* Spent + status */}
-                <div className="flex items-center justify-between">
-                  <div>
-                    {isOver ? (
-                      <>
-                        <p className="text-[11px] text-red-500 font-semibold uppercase flex items-center gap-1">
-                          <AlertTriangle className="w-3 h-3" /> Over by {formatCurrency(overAmount)}
-                        </p>
-                        <p className="text-xl font-bold text-red-600" data-testid={`spent-${budget.category}`}>
-                          {formatCurrency(budget.current)}
-                        </p>
-                      </>
-                    ) : (
-                      <>
-                        <p className="text-[11px] text-slate-400 font-semibold uppercase">Spent</p>
-                        <p className="text-xl font-bold text-slate-900" data-testid={`spent-${budget.category}`}>
-                          {formatCurrency(budget.current)}
-                        </p>
-                      </>
-                    )}
+                <div>
+                  <div className="flex justify-between text-[10px] text-slate-400 font-medium mb-1">
+                    <span>{pct.toFixed(0)}% used</span>
+                    <span>{isOver ? 'Over budget' : `${formatCurrency(remaining)} left`}</span>
                   </div>
-                  <span className={`text-[10px] font-bold uppercase px-2.5 py-1 rounded-full ${status.color}`} data-testid={`status-${budget.category}`}>
-                    {status.label}
-                  </span>
+                  <div className="w-full h-2 rounded-full bg-slate-100 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${statusConfig.barClass}`}
+                      style={{ width: `${Math.min(pct, 100)}%` }}
+                    />
+                  </div>
                 </div>
 
-                {/* Expand/Collapse toggle */}
-                <button
-                  className="mt-4 flex items-center justify-center gap-1 text-[11px] text-indigo-500 font-semibold uppercase tracking-wider hover:text-indigo-700 transition-colors w-full py-2 rounded-xl hover:bg-indigo-50"
-                  onClick={() => toggleCategory(budget.category)}
-                  data-testid={`toggle-expenses-${budget.category}`}
-                >
-                  {expandedCards[budget.category] ? (
-                    <><ChevronUp className="w-3.5 h-3.5" /> Hide Expenses</>
-                  ) : (
-                    <><ChevronDown className="w-3.5 h-3.5" /> Show Expenses</>
-                  )}
-                </button>
+                {/* Adjust + expand */}
+                <div className="flex items-center justify-between pt-1 border-t border-slate-100">
+                  <button
+                    className="inline-flex items-center gap-1 text-[11px] text-indigo-500 font-bold uppercase tracking-wider hover:text-indigo-700 transition-colors"
+                    onClick={() => setAdjustDialog({ open: true, category: budget.category, limit: budget.limit?.toFixed(0) || '0' })}
+                    data-testid={`adjust-${budget.category}`}
+                  >
+                    <Pencil className="w-3 h-3" /> Adjust
+                  </button>
+                  <button
+                    className="inline-flex items-center gap-1 text-[11px] text-indigo-500 font-semibold uppercase tracking-wider hover:text-indigo-700 transition-colors"
+                    onClick={() => toggleCategory(budget.category)}
+                    data-testid={`toggle-expenses-${budget.category}`}
+                  >
+                    {expandedCards[budget.category] ? <><ChevronUp className="w-3.5 h-3.5" /> Hide</> : <><ChevronDown className="w-3.5 h-3.5" /> Expenses</>}
+                  </button>
+                </div>
 
                 {/* Expense dropdown */}
                 {expandedCards[budget.category] && (() => {
                   const expenses = getCategoryExpenses(budget.category);
                   return (
-                    <div className="mt-3 border-t border-slate-100 pt-3 space-y-1 max-h-52 overflow-y-auto" data-testid={`expense-list-${budget.category}`}>
+                    <div className="border-t border-slate-100 pt-3 space-y-1 max-h-52 overflow-y-auto" data-testid={`expense-list-${budget.category}`}>
                       {expenses.length > 0 ? (
                         expenses.slice(0, 20).map(exp => (
                           <div key={exp.id} className="flex items-center justify-between py-2 px-2 rounded-lg hover:bg-slate-50 group text-xs">
@@ -471,9 +604,7 @@ export default function Budgets() {
                         <p className="text-xs text-slate-400 text-center py-3">No expenses in {periodLabel}</p>
                       )}
                       {expenses.length > 20 && (
-                        <p className="text-[10px] text-slate-400 text-center pt-1">
-                          Showing 20 of {expenses.length}
-                        </p>
+                        <p className="text-[10px] text-slate-400 text-center pt-1">Showing 20 of {expenses.length}</p>
                       )}
                     </div>
                   );
@@ -507,6 +638,33 @@ export default function Budgets() {
             <DialogTitle>Add Budget Category</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-2">
+            {/* Quick-select chips from current category cards */}
+            <div>
+              <Label className="text-xs text-slate-500 uppercase tracking-wider">Select from existing</Label>
+              <div className="flex flex-wrap gap-2 mt-2">
+                {visibleBudgets.map(b => (
+                  <button
+                    key={b.category}
+                    type="button"
+                    onClick={() => setAddCategoryDialog(d => ({ ...d, category: b.category }))}
+                    className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-all ${
+                      addCategoryDialog.category === b.category
+                        ? 'bg-indigo-600 text-white border-indigo-600'
+                        : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-400 hover:text-indigo-600'
+                    }`}
+                  >
+                    {b.category}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 text-xs text-slate-400">
+              <div className="flex-1 h-px bg-slate-100" />
+              <span>or type a custom name</span>
+              <div className="flex-1 h-px bg-slate-100" />
+            </div>
+
             <div>
               <Label htmlFor="new-category-name">Category Name</Label>
               <Input
@@ -530,15 +688,12 @@ export default function Budgets() {
                 data-testid="new-category-limit-input"
               />
             </div>
-            <p className="text-xs text-slate-400">
-              This creates a custom category card for {periodLabel}. It will appear with the other budget categories below.
-            </p>
             <Button
               className="w-full bg-gradient-to-br from-indigo-600 to-purple-600 text-white rounded-xl"
               onClick={handleCreateCategory}
               data-testid="create-category-btn"
             >
-              Create Category
+              Update Budget
             </Button>
           </div>
         </DialogContent>
@@ -573,6 +728,38 @@ export default function Budgets() {
               data-testid="adjust-save-btn"
             >
               Save
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* SET MONTHLY BUDGET DIALOG */}
+      <Dialog open={setBudgetDialog.open} onOpenChange={open => setSetBudgetDialog(d => ({ ...d, open }))}>
+        <DialogContent className="rounded-[24px]">
+          <DialogHeader>
+            <DialogTitle>Set Budget for {displayPeriodLabel}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div>
+              <Label htmlFor="monthly-budget-amount">Monthly Budget Amount</Label>
+              <Input
+                id="monthly-budget-amount"
+                type="number"
+                min="0"
+                step="1"
+                value={setBudgetDialog.amount}
+                onChange={e => setSetBudgetDialog(d => ({ ...d, amount: e.target.value }))}
+                placeholder="e.g. 30000"
+              />
+            </div>
+            <p className="text-xs text-slate-400">
+              Any unspent amount from last month will automatically carry over and add to this total.
+            </p>
+            <Button
+              className="w-full bg-gradient-to-br from-indigo-600 to-purple-600 text-white rounded-xl"
+              onClick={handleSetMonthlyBudget}
+            >
+              Save Budget
             </Button>
           </div>
         </DialogContent>

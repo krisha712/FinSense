@@ -168,6 +168,37 @@ export async function getAnomalies() {
   }
 }
 
+// ==================== Monthly Budget ====================
+
+export async function getMonthlyBudget(month, year) {
+  try {
+    const params = {};
+    if (month != null) params.month = month;
+    if (year != null) params.year = year;
+    const r = await axios.get(`${API}/budget/monthly`, { params });
+    return r.data || { data: {}, metadata: {}, error: null };
+  } catch (e) {
+    console.error('getMonthlyBudget error:', e);
+    return { data: { set_amount: 0, carryover: 0, total: 0, has_budget: false }, metadata: {}, error: e.message };
+  }
+}
+
+export async function setMonthlyBudget(month, year, amount) {
+  try {
+    const r = await axios.post(`${API}/budget/monthly`, { month, year, amount }, {
+      headers: { 'Content-Type': 'application/json' },
+    });
+    return r.data;
+  } catch (e) {
+    const status = e?.response?.status;
+    const detail = e?.response?.data?.detail;
+    const msg = Array.isArray(detail)
+      ? detail.map(d => d.msg).join(', ')
+      : detail || (status === 404 ? 'Route not found — please restart the backend server' : e.message || 'Failed to save budget');
+    throw new Error(msg);
+  }
+}
+
 // ==================== Expenses by Category ====================
 
 export async function getExpensesByCategory(category) {

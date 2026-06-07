@@ -52,6 +52,10 @@ export default function Dashboard() {
   const [insights, setInsights] = useState([]);
   const [analytics, setAnalytics] = useState({ data: { total_monthly: 0, by_category: [], comparison: null }, metadata: {} });
   const [budgets, setBudgets] = useState([]);
+  const [monthlyBudget, setMonthlyBudget] = useState(null);
+  const [availableMonths, setAvailableMonths] = useState([]);
+  const [selectedMonth, setSelectedMonth] = useState(null);
+  const [selectedYear, setSelectedYear] = useState(null);
   const [showAddExpense, setShowAddExpense] = useState(false);
   const [showReceiptScan, setShowReceiptScan] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -86,7 +90,44 @@ export default function Dashboard() {
       });
   }, [expenses, budgets, analytics, voiceDraft?.category]);
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => { initContext(); }, []);
+
+  async function initContext() {
+    const res = await api.getAvailableMonths();
+    const defaultCtx = res?.metadata?.default || {};
+    const now = new Date();
+    const month = defaultCtx.month || (now.getMonth() + 1);
+    const year = defaultCtx.year || now.getFullYear();
+
+    // Always generate 12 months, merging in real counts from API
+    const monthNames = ['January','February','March','April','May','June',
+                        'July','August','September','October','November','December'];
+    const apiMonths = res?.data || [];
+    const apiMap = {};
+    apiMonths.forEach(m => { apiMap[`${m.year}-${m.month}`] = m.count || 0; });
+
+    const months = Array.from({ length: 12 }, (_, i) => {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const m = d.getMonth() + 1;
+      const y = d.getFullYear();
+      return {
+        month: m,
+        year: y,
+        label: `${monthNames[d.getMonth()]} ${y}`,
+        count: apiMap[`${y}-${m}`] || 0,
+      };
+    });
+
+    setAvailableMonths(months);
+    setSelectedMonth(month);
+    setSelectedYear(year);
+  }
+
+  useEffect(() => {
+    if (selectedMonth != null && selectedYear != null) {
+      loadData(selectedMonth, selectedYear);
+    }
+  }, [selectedMonth, selectedYear]);
 
   useEffect(() => {
     categoryOptionsRef.current = categoryOptions;
@@ -179,12 +220,11 @@ export default function Dashboard() {
     };
   }, [showVoiceExamples, voiceDraft]);
 
-  async function loadData() {
-    console.log('[LOAD DATA] Fetching expenses...');
+  async function loadData(month, year) {
     try {
       const now = new Date();
-      const currentMonth = now.getMonth() + 1;
-      const currentYear = now.getFullYear();
+      const currentMonth = month || (now.getMonth() + 1);
+      const currentYear = year || now.getFullYear();
 
       const [exp, insightsRes, an, budg] = await Promise.all([
         api.getExpenses(),
@@ -192,26 +232,25 @@ export default function Dashboard() {
         api.getAnalyticsSpending(currentMonth, currentYear),
         api.getBudgets(currentMonth, currentYear)
       ]);
-      
-      console.log('[LOAD DATA] Raw expenses received:', exp?.length || 0);
-      
-      // Sort expenses by date (newest first)
-      const sortedExpenses = Array.isArray(exp) ? exp.sort((a, b) => {
-        return new Date(b.date) - new Date(a.date);
+
+      // Filter expenses to selected month/year only
+      const filtered = Array.isArray(exp) ? exp.filter(e => {
+        if (!e.date) return false;
+        const d = new Date(e.date);
+        return d.getFullYear() === currentYear && (d.getMonth() + 1) === currentMonth;
       }) : [];
-      
-      console.log('[LOAD DATA] Sorted expenses:', sortedExpenses.length);
-      console.log('[LOAD DATA] Latest 3 expenses:', sortedExpenses.slice(0, 3).map(e => ({
-        id: e.id,
-        description: e.description,
-        amount: e.amount,
-        date: e.date
-      })));
+
+      // Sort by created_at (newest first) so user-added expenses always appear at top
+      const sortedExpenses = filtered.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
       
       setExpenses(sortedExpenses);
       setInsights(insightsRes?.data || []);
       setAnalytics(an || { data: { total_monthly: 0, by_category: [], comparison: null }, metadata: {} });
       setBudgets(budg?.data?.budget || []);
+
+      // Fetch monthly budget for the selected month
+      const mbRes = await api.getMonthlyBudget(currentMonth, currentYear);
+      setMonthlyBudget(mbRes?.data || null);
     } catch (err) {
       console.error('[LOAD DATA] Error:', err);
       toast.error('Failed to load data');
@@ -235,7 +274,7 @@ export default function Dashboard() {
       
       // Reload all data to get updated expenses list
       console.log('[ADD EXPENSE] Reloading data...');
-      await loadData();
+      await loadData(selectedMonth, selectedYear);
       console.log('[ADD EXPENSE] Data reloaded, expenses count:', expenses.length);
     } catch (err) {
       console.error('[ADD EXPENSE] Error:', err);
@@ -252,14 +291,14 @@ export default function Dashboard() {
       console.log('[DELETE EXPENSE] Successfully deleted');
       toast.success('Expense deleted');
       // Re-fetch all data to sync totals and budgets
-      loadData();
+      loadData(selectedMonth, selectedYear);
     } catch (err) {
       console.error('[DELETE EXPENSE] Error:', err);
       console.error('[DELETE EXPENSE] Error details:', err.response?.data);
       const errorMsg = err.response?.data?.detail || 'Failed to delete expense';
       toast.error(errorMsg);
       // Revert on failure
-      loadData();
+      loadData(selectedMonth, selectedYear);
     }
   }
 
@@ -309,7 +348,7 @@ export default function Dashboard() {
 
       toast.success('Voice expense added');
       resetVoiceDraft();
-      await loadData();
+      await loadData(selectedMonth, selectedYear);
     } catch (err) {
       console.error('[VOICE EXPENSE] Error:', err);
       toast.error('Failed to save voice expense');
@@ -331,10 +370,19 @@ export default function Dashboard() {
         previous_total: snapshot.previousTotal,
       }
     : spendingData.comparison;
+  const MONTH_NAMES = ['January','February','March','April','May','June',
+                       'July','August','September','October','November','December'];
+  const selectedPeriodLabel = selectedMonth && selectedYear
+    ? `${MONTH_NAMES[selectedMonth - 1]} ${selectedYear}`
+    : new Date().toLocaleString('default', { month: 'long', year: 'numeric' });
   const periodLabel = trendMode === 'weekly'
     ? snapshot.label
-    : (analytics?.metadata?.label || analytics?.metadata?.current_period || 'Current');
-  const totalBudget = budgets.reduce((s, b) => s + (b.limit || 0), 0);
+    : selectedPeriodLabel;
+  const aiTotalBudget = budgets.reduce((s, b) => s + (b.limit || 0), 0);
+  // Use user-set monthly budget if available, else fall back to AI smart budget
+  const totalBudget = (monthlyBudget?.has_budget && monthlyBudget?.available > 0)
+    ? monthlyBudget.available
+    : aiTotalBudget;
   const displayBudget = trendMode === 'weekly'
     ? totalBudget / getWeeksInMonth(snapshot.referenceDate)
     : totalBudget;
@@ -372,8 +420,34 @@ export default function Dashboard() {
         <div className="mb-6">
           <p className="text-sm uppercase tracking-[0.2em] text-slate-500 font-semibold">Overview</p>
           <h1 className="text-4xl md:text-5xl font-bold mt-2 text-slate-900 leading-tight" data-testid="dashboard-title">
-            Financial overview for {periodLabel}
+            Financial Overview
           </h1>
+          <div className="flex flex-wrap items-center gap-3 mt-2">
+            <p className="text-base text-slate-500">Showing data for <span className="font-semibold text-indigo-600">{periodLabel}</span></p>
+            {availableMonths.length > 0 ? (
+              <Select
+                value={`${selectedYear}-${selectedMonth}`}
+                onValueChange={(value) => {
+                  const [y, m] = value.split('-').map(Number);
+                  setSelectedYear(y);
+                  setSelectedMonth(m);
+                }}
+              >
+                <SelectTrigger className="w-[160px] h-9 rounded-xl border border-slate-200 bg-white shadow-sm text-slate-700 font-semibold px-3 text-sm">
+                  <SelectValue placeholder="Select month" />
+                </SelectTrigger>
+                <SelectContent className="rounded-2xl border-0 bg-white shadow-lg">
+                  {availableMonths.map((m) => (
+                    <SelectItem key={`${m.year}-${m.month}`} value={`${m.year}-${m.month}`} className="rounded-xl">
+                      {m.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <div className="w-[160px] h-9 rounded-xl bg-slate-200 animate-pulse" />
+            )}
+          </div>
         </div>
 
         {/* HERO + DONUT */}
