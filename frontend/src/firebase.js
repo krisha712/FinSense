@@ -2,12 +2,13 @@ import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyAnkLfm2g7FK3FTlx7E--aCbhNZQVIsRDMs",
-  authDomain: "finfusion-d388c.firebaseapp.com",
-  projectId: "finfusion-d388c",
-  storageBucket: "finfusion-d388c.firebasestorage.app",
-  messagingSenderId: "776821220365",
-  appId: "1:776821220365:web:bab5d1118558e73cf4a144"
+  apiKey: "AIzaSyBv6_JG178td9Og5_P--pEvbk2gemQzPTk",
+  authDomain: "finsense-21341.firebaseapp.com",
+  projectId: "finsense-21341",
+  storageBucket: "finsense-21341.firebasestorage.app",
+  messagingSenderId: "521857626827",
+  appId: "1:521857626827:web:e56cac8bb2dfbc9a36e14e",
+  measurementId: "G-TT82XQX315"
 };
 
 const app = initializeApp(firebaseConfig);
