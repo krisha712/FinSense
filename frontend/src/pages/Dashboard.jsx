@@ -54,6 +54,9 @@ export default function Dashboard() {
   const [analytics, setAnalytics] = useState({ data: { total_monthly: 0, by_category: [], comparison: null }, metadata: {} });
   const [budgets, setBudgets] = useState([]);
   const [rollingBudget, setRollingBudget] = useState(null);
+  const [availableMonths, setAvailableMonths] = useState([]);
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [showAddExpense, setShowAddExpense] = useState(false);
   const [showReceiptScan, setShowReceiptScan] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -88,7 +91,21 @@ export default function Dashboard() {
       });
   }, [expenses, budgets, analytics, voiceDraft?.category]);
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => { 
+    // Build last 6 months including current month
+    const months = [];
+    const now = new Date();
+    for (let i = 0; i < 6; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      months.push({
+        month: d.getMonth() + 1,
+        year: d.getFullYear(),
+        label: d.toLocaleString('default', { month: 'long' }) + ' ' + d.getFullYear(),
+      });
+    }
+    setAvailableMonths(months);
+    loadData(selectedMonth, selectedYear);
+  }, []);
 
   useEffect(() => {
     categoryOptionsRef.current = categoryOptions;
@@ -181,19 +198,17 @@ export default function Dashboard() {
     };
   }, [showVoiceExamples, voiceDraft]);
 
-  async function loadData() {
+  async function loadData(month, year) {
+    const m = month ?? selectedMonth;
+    const y = year ?? selectedYear;
     console.log('[LOAD DATA] Fetching expenses...');
     try {
-      const now = new Date();
-      const currentMonth = now.getMonth() + 1;
-      const currentYear = now.getFullYear();
-
       const [exp, insightsRes, an, budg, rollingRes] = await Promise.all([
         api.getExpenses(),
         api.getSuggestions(),
-        api.getAnalyticsSpending(currentMonth, currentYear),
-        api.getBudgets(currentMonth, currentYear),
-        api.getRollingBudget(currentMonth, currentYear),
+        api.getAnalyticsSpending(m, y),
+        api.getBudgets(m, y),
+        api.getRollingBudget(m, y),
       ]);
       
       console.log('[LOAD DATA] Raw expenses received:', exp?.length || 0);
@@ -239,7 +254,7 @@ export default function Dashboard() {
       
       // Reload all data to get updated expenses list
       console.log('[ADD EXPENSE] Reloading data...');
-      await loadData();
+      await loadData(selectedMonth, selectedYear);
       console.log('[ADD EXPENSE] Data reloaded, expenses count:', expenses.length);
     } catch (err) {
       console.error('[ADD EXPENSE] Error:', err);
@@ -256,14 +271,14 @@ export default function Dashboard() {
       console.log('[DELETE EXPENSE] Successfully deleted');
       toast.success('Expense deleted');
       // Re-fetch all data to sync totals and budgets
-      loadData();
+      loadData(selectedMonth, selectedYear);
     } catch (err) {
       console.error('[DELETE EXPENSE] Error:', err);
       console.error('[DELETE EXPENSE] Error details:', err.response?.data);
       const errorMsg = err.response?.data?.detail || 'Failed to delete expense';
       toast.error(errorMsg);
       // Revert on failure
-      loadData();
+      loadData(selectedMonth, selectedYear);
     }
   }
 
@@ -313,7 +328,7 @@ export default function Dashboard() {
 
       toast.success('Voice expense added');
       resetVoiceDraft();
-      await loadData();
+      await loadData(selectedMonth, selectedYear);
     } catch (err) {
       console.error('[VOICE EXPENSE] Error:', err);
       toast.error('Failed to save voice expense');
@@ -322,9 +337,12 @@ export default function Dashboard() {
     }
   }
 
-  // Derived values — all from backend
+  // Derived values — scoped to selected month
   const spendingData = analytics?.data || {};
   const snapshot = getTrendSnapshot(expenses, trendMode);
+
+  // For monthly mode use analytics API data (already scoped to selectedMonth/selectedYear)
+  // For weekly mode use snapshot (client-side calculation from all expenses)
   const monthlyTotalSpent = spendingData.total_monthly || 0;
   const totalSpent = trendMode === 'weekly' ? snapshot.total : monthlyTotalSpent;
   const byCategory = trendMode === 'weekly' ? snapshot.byCategory : (spendingData.by_category || []);
@@ -335,15 +353,16 @@ export default function Dashboard() {
         previous_total: snapshot.previousTotal,
       }
     : spendingData.comparison;
+  const MONTH_NAMES_FULL = ['','January','February','March','April','May','June','July','August','September','October','November','December'];
   const periodLabel = trendMode === 'weekly'
     ? snapshot.label
-    : (analytics?.metadata?.label || analytics?.metadata?.current_period || 'Current');
+    : `${MONTH_NAMES_FULL[selectedMonth]} ${selectedYear}`;
   const totalBudget = budgets.reduce((s, b) => s + (b.limit || 0), 0);
-  // Use rolling budget's available_budget if set, otherwise fall back to category budgets total
-  const rollingAvailable = rollingBudget?.is_set ? rollingBudget.available_budget : null;
+  // Use rolling budget's available_budget when set, else 0 (not category sum)
+  const rollingAvailable = rollingBudget?.is_set ? rollingBudget.available_budget : 0;
   const displayBudget = trendMode === 'weekly'
-    ? (rollingAvailable ?? totalBudget) / getWeeksInMonth(snapshot.referenceDate)
-    : (rollingAvailable ?? totalBudget);
+    ? rollingAvailable / getWeeksInMonth(snapshot.referenceDate)
+    : rollingAvailable;
   const budgetRemaining = Math.max(0, displayBudget - totalSpent);
   const budgetUsedPct = displayBudget > 0 ? (totalSpent / displayBudget * 100) : 0;
   const savingsBudget = (budgets.find(b => b.category?.toLowerCase() === 'savings')?.limit || 0) / (trendMode === 'weekly' ? getWeeksInMonth(snapshot.referenceDate) : 1);
@@ -375,11 +394,38 @@ export default function Dashboard() {
 
       <main className="container mx-auto px-4 sm:px-6 py-6 sm:py-8">
         {/* GREETING */}
-        <div className="mb-6">
-          <p className="text-sm uppercase tracking-[0.2em] text-slate-500 font-semibold">Overview</p>
-          <h1 className="text-4xl md:text-5xl font-bold mt-2 text-slate-900 leading-tight" data-testid="dashboard-title">
-            Financial overview for {periodLabel}
-          </h1>
+        <div className="mb-6 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+          <div>
+            <p className="text-sm uppercase tracking-[0.2em] text-slate-500 font-semibold">Overview</p>
+            <h1 className="text-4xl md:text-5xl font-bold mt-2 text-slate-900 leading-tight" data-testid="dashboard-title">
+              Financial Overview
+            </h1>
+            <p className="text-base text-slate-500 mt-1">Showing data for <span className="font-semibold text-indigo-600">{periodLabel}</span></p>
+          </div>
+          <Select
+            value={`${selectedYear}-${selectedMonth}`}
+            onValueChange={(value) => {
+              const [y, m] = value.split('-').map(Number);
+              setSelectedYear(y);
+              setSelectedMonth(m);
+              // Reset data immediately so stale values don't show
+              setAnalytics({ data: { total_monthly: 0, by_category: [], comparison: null }, metadata: {} });
+              setBudgets([]);
+              setRollingBudget(null);
+              loadData(m, y);
+            }}
+          >
+            <SelectTrigger className="w-full sm:w-[200px] h-11 rounded-2xl border-0 bg-white shadow-[0_8px_25px_rgba(99,102,241,0.12)] text-slate-700 font-semibold px-4">
+              <SelectValue placeholder="Select month" />
+            </SelectTrigger>
+            <SelectContent className="rounded-2xl border-0 bg-white shadow-[0_24px_60px_rgba(15,23,42,0.18)]">
+              {availableMonths.map((m) => (
+                <SelectItem key={`${m.year}-${m.month}`} value={`${m.year}-${m.month}`} className="rounded-xl">
+                  {m.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         {/* HERO + DONUT */}
@@ -508,7 +554,13 @@ export default function Dashboard() {
                 </Button>
               </div>
               <div className="space-y-1 max-h-[360px] overflow-y-auto pr-1">
-                {expenses.slice(0, 10).map(expense => (
+                {expenses
+                  .filter(e => {
+                    const d = new Date(e.date);
+                    return d.getFullYear() === selectedYear && d.getMonth() + 1 === selectedMonth;
+                  })
+                  .slice(0, 10)
+                  .map(expense => (
                   <div key={expense.id} className="flex flex-col sm:flex-row sm:items-center justify-between px-3 py-3 rounded-[16px] hover:bg-slate-50 transition-colors gap-3" data-testid={`expense-item-${expense.id}`}>
                     <div className="flex items-center gap-3 flex-1 min-w-0">
                       <div className="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 text-xs">{expense.category?.[0] || '$'}</div>
@@ -525,8 +577,11 @@ export default function Dashboard() {
                     </div>
                   </div>
                 ))}
-                {expenses.length === 0 && (
-                  <div className="text-center py-10 text-slate-300 text-sm">No expenses yet</div>
+                {expenses.filter(e => {
+                    const d = new Date(e.date);
+                    return d.getFullYear() === selectedYear && d.getMonth() + 1 === selectedMonth;
+                  }).length === 0 && (
+                  <div className="text-center py-10 text-slate-300 text-sm">No expenses for {periodLabel}</div>
                 )}
               </div>
               <div className="mt-3 flex justify-end">
@@ -677,9 +732,9 @@ export default function Dashboard() {
 
           {/* ROLLING BUDGET */}
           <RollingBudgetCard
-            month={new Date().getMonth() + 1}
-            year={new Date().getFullYear()}
-            onBudgetChange={loadData}
+            month={selectedMonth}
+            year={selectedYear}
+            onBudgetChange={() => loadData(selectedMonth, selectedYear)}
           />
 
         </div>

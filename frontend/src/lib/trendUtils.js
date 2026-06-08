@@ -108,7 +108,8 @@ export function buildTrendSeries(expenses = [], mode = 'monthly') {
     ...bucket,
     label: mode === 'weekly'
       ? bucket.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-      : bucket.period.slice(0, 7),
+      : bucket.date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+    periodKey: bucket.period.slice(0, 7), // "2026-05" kept for data keying
   }));
 }
 

@@ -19,7 +19,7 @@ export default function Insights() {
   const { trendMode } = useTrendMode();
   const [expenses, setExpenses] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [trendView, setTrendView] = useState('all');
+  const [trendView, setTrendView] = useState('recent');
 
   useEffect(() => { loadData(); }, []);
 
@@ -52,22 +52,24 @@ export default function Insights() {
   const allTimeLineData = trendSeries.map(m => ({
     period: m.period,
     label: m.label,
+    displayLabel: m.label,
     total: m.total,
     count: m.count,
   }));
-  const recentLineData = allTimeLineData.slice(-(trendMode === 'weekly' ? 8 : 12));
+  const recentLineData = allTimeLineData.slice(-(trendMode === 'weekly' ? 6 : 6));
   const lineData = trendView === 'recent' ? recentLineData : allTimeLineData;
   const topCatNames = topCategories.slice(0, 6).map(c => c.category);
   const barData = builtBarData;
 
-  // Month-over-month comparison (last 12 months)
-  const recentMonths = allTimeLineData.slice(-(trendMode === 'weekly' ? 9 : 13));
+  // Month-over-month comparison (last 6 months)
+  const recentMonths = allTimeLineData.slice(-(trendMode === 'weekly' ? 7 : 7));
   const momData = recentMonths.slice(1).map((m, i) => {
     const prev = recentMonths[i];
     const delta = m.total - prev.total;
     const deltaPct = prev.total > 0 ? ((delta / prev.total) * 100) : 0;
     return {
-      period: m.period.length >= 7 ? m.period.slice(0, 7) : m.period,
+      period: m.period,
+      label: m.label,
       total: m.total,
       previous: prev.total,
       delta: Math.round(delta),
@@ -108,7 +110,7 @@ export default function Insights() {
                   trendView === 'recent' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'
                 }`}
               >
-                {trendMode === 'weekly' ? 'Recent 8W' : 'Recent 12M'}
+              {trendMode === 'weekly' ? 'Recent 6W' : 'Recent 6M'}
               </button>
               <button
                 onClick={() => setTrendView('all')}
@@ -128,13 +130,13 @@ export default function Insights() {
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={lineData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#94a3b8' }} interval={0} />
+                    <XAxis dataKey="displayLabel" tick={{ fontSize: 10, fill: '#94a3b8' }} interval={0} />
                     <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} tickFormatter={v => `${(v / 1000).toFixed(0)}k`} />
                     <Tooltip
                       contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}
                       formatter={(v) => [formatCurrency(v), 'Total']}
                     />
-                    <Line type="linear" dataKey="total" stroke="#6366f1" strokeWidth={2.5} dot={false} />
+                    <Line type="linear" dataKey="total" stroke="#6366f1" strokeWidth={2.5} dot={{ r: 4, fill: '#6366f1' }} activeDot={{ r: 6 }} />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
@@ -208,8 +210,8 @@ export default function Insights() {
 
         {/* MONTH-OVER-MONTH COMPARISON */}
         <Card className="rounded-[24px] border-0 bg-white p-5 sm:p-6 shadow-sm" data-testid="mom-comparison-card">
-          <h2 className="text-xl font-bold text-slate-900 mb-6">{trendMode === 'weekly' ? 'Week-over-Week Comparison' : 'Month-over-Month Comparison'}</h2>
-          <p className="text-sm text-slate-500 mb-4">{trendMode === 'weekly' ? 'Last 8 weeks' : 'Last 12 months'}</p>
+          <h2 className="text-xl font-bold text-slate-900 mb-1">{trendMode === 'weekly' ? 'Week-over-Week Comparison' : 'Month-over-Month Comparison'}</h2>
+          <p className="text-sm text-slate-500 mb-4">{trendMode === 'weekly' ? 'Last 6 weeks' : 'Last 6 months'}</p>
           <div className="overflow-x-auto">
             <table className="w-full text-sm" data-testid="mom-table">
               <thead>
@@ -222,9 +224,9 @@ export default function Insights() {
                 </tr>
               </thead>
               <tbody>
-                {momData.map((row, idx) => (
+                {momData.slice(-6).map((row) => (
                   <tr key={row.period} className="border-b border-slate-50 last:border-0">
-                    <td className="py-3 pr-4 font-medium text-slate-800">{row.period}</td>
+                    <td className="py-3 pr-4 font-medium text-slate-800">{row.label}</td>
                     <td className="py-3 pr-4 text-slate-700">{formatCurrency(row.total)}</td>
                     <td className="py-3 pr-4 text-slate-500">{formatCurrency(row.previous)}</td>
                     <td className={`py-3 pr-4 font-medium ${row.delta > 0 ? 'text-red-500' : row.delta < 0 ? 'text-emerald-500' : 'text-slate-500'}`}>
