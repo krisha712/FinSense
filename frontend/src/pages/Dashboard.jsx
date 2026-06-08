@@ -105,7 +105,7 @@ export default function Dashboard() {
     }
     setAvailableMonths(months);
     loadData(selectedMonth, selectedYear);
-  }, []);
+  }, [selectedMonth, selectedYear]);
 
   useEffect(() => {
     categoryOptionsRef.current = categoryOptions;
