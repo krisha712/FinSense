@@ -1,12 +1,11 @@
 services:
   - type: web
     name: finsense-backend
-    runtime: python
-    rootDir: backend
-    buildCommand: "apt-get update && apt-get install -y tesseract-ocr tesseract-ocr-eng libgl1 && pip install -r requirements-render.txt"
-    startCommand: "uvicorn server:app --host 0.0.0.0 --port $PORT"
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
     envVars:
       - key: TESSERACT_CMD
         value: /usr/bin/tesseract
-      - key: PYTHON_VERSION
-        value: 3.11.0
+      - key: PORT
+        value: 10000
