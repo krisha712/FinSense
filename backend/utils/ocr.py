@@ -17,22 +17,37 @@ def configure_tesseract() -> None:
     Priority order:
     1. TESSERACT_CMD env variable (explicit override)
     2. System PATH
-    3. Common Windows install locations
-    4. Common macOS (Homebrew) install locations
+    3. Common Linux paths (Render/Ubuntu)
+    4. Common Windows install locations
+    5. Common macOS (Homebrew) install locations
     """
     # 1. Explicit env override
     env_path = os.getenv("TESSERACT_CMD", "").strip()
     if env_path and os.path.exists(env_path):
         pytesseract.pytesseract.tesseract_cmd = env_path
-        logger.debug("Tesseract configured from TESSERACT_CMD env: %s", env_path)
+        logger.info("✅ Tesseract configured from TESSERACT_CMD env: %s", env_path)
         return
 
     # 2. Already on PATH
     if shutil.which("tesseract"):
-        logger.debug("Tesseract found on system PATH")
+        found = shutil.which("tesseract")
+        pytesseract.pytesseract.tesseract_cmd = found
+        logger.info("✅ Tesseract found on system PATH: %s", found)
         return
 
-    # 3. Common Windows paths
+    # 3. Common Linux paths (Render, Ubuntu, Debian)
+    linux_paths = [
+        "/usr/bin/tesseract",
+        "/usr/local/bin/tesseract",
+        "/usr/share/tesseract-ocr/tesseract",
+    ]
+    for path in linux_paths:
+        if os.path.exists(path):
+            pytesseract.pytesseract.tesseract_cmd = path
+            logger.info("✅ Tesseract configured from Linux path: %s", path)
+            return
+
+    # 4. Common Windows paths
     windows_paths = [
         r"C:\Program Files\Tesseract-OCR\tesseract.exe",
         r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
@@ -41,10 +56,10 @@ def configure_tesseract() -> None:
     for path in windows_paths:
         if os.path.exists(path):
             pytesseract.pytesseract.tesseract_cmd = path
-            logger.debug("Tesseract configured from Windows path: %s", path)
+            logger.info("✅ Tesseract configured from Windows path: %s", path)
             return
 
-    # 4. Common macOS (Homebrew) paths
+    # 5. Common macOS (Homebrew) paths
     macos_paths = [
         "/opt/homebrew/bin/tesseract",
         "/usr/local/bin/tesseract",
@@ -52,10 +67,10 @@ def configure_tesseract() -> None:
     for path in macos_paths:
         if os.path.exists(path):
             pytesseract.pytesseract.tesseract_cmd = path
-            logger.debug("Tesseract configured from macOS path: %s", path)
+            logger.info("✅ Tesseract configured from macOS path: %s", path)
             return
 
-    logger.warning("Tesseract binary not found. OCR will not work.")
+    logger.warning("❌ Tesseract binary not found. Receipt scanning will not work.")
 
 
 # ============================================================

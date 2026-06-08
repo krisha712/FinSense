@@ -71,6 +71,22 @@ async def startup_event():
     init_demo_data()
     logger.info("Demo data ready")
 
+    # Check Tesseract availability
+    from utils.ocr import configure_tesseract
+    import shutil
+    configure_tesseract()
+    tess_path = shutil.which("tesseract")
+    if tess_path:
+        logger.info("✅ Tesseract OCR available: %s", tess_path)
+    else:
+        import pytesseract
+        cmd = getattr(pytesseract.pytesseract, 'tesseract_cmd', 'tesseract')
+        import os
+        if os.path.exists(cmd):
+            logger.info("✅ Tesseract OCR available: %s", cmd)
+        else:
+            logger.warning("❌ Tesseract OCR not found — receipt scanning disabled")
+
     logger.info("=" * 60)
 
 @app.get("/api/")
