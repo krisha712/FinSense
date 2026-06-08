@@ -105,6 +105,8 @@ export default function Dashboard() {
     }
     setAvailableMonths(months);
     loadData(selectedMonth, selectedYear);
+
+ // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedMonth, selectedYear]);
 
   useEffect(() => {
