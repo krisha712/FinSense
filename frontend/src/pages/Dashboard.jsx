@@ -35,7 +35,7 @@ const COLORS = ["#FF0066", "#FF6C0C", "#934790", "#8CA9FF", "#3B82F6", "#10B981"
 
 const BASE_CATEGORIES = [
   'Food', 'Transport', 'Shopping', 'Entertainment',
-  'Utilities', 'Healthcare', 'Rent', 'Education', 'Travel', 'Fitness', 'Pets', 'Other', 'Miscellaneous'
+  'Utilities', 'Healthcare', 'Rent', 'Education', 'Travel', 'Fitness', 'Pets', 'Other'
 ];
 
 const voiceExamples = [

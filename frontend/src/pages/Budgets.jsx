@@ -178,18 +178,27 @@ export default function Budgets() {
   async function handleCreateCategory() {
     const category = addCategoryDialog.category.trim();
     const limit = parseFloat(addCategoryDialog.limit || '0');
-    if (!category) { toast.error('Enter a category name'); return; }
+    if (!category) { toast.error('Select a category'); return; }
     if (isNaN(limit) || limit < 0) { toast.error('Enter a valid budget amount'); return; }
-    if (budgets.some(b => b.category.toLowerCase() === category.toLowerCase())) {
-      toast.error('That category already exists for this month'); return;
+
+    // Validation: total category budgets must not exceed available budget
+    if (rb.is_set && rb.available_budget > 0) {
+      const existingLimit = budgets.find(b => b.category.toLowerCase() === category.toLowerCase())?.limit || 0;
+      const otherCatsTotal = budgets.reduce((s, b) => b.category.toLowerCase() === category.toLowerCase() ? s : s + (b.limit || 0), 0);
+      const newTotal = otherCatsTotal + limit;
+      if (newTotal > rb.available_budget) {
+        toast.error('Budget limit exceeded. Please enter an amount within your remaining available budget.');
+        return;
+      }
     }
+
     try {
       await api.postCustomBudgetCategory({ category, limit, month: selectedMonth, year: selectedYear });
       await loadData(selectedMonth, selectedYear);
       setAddCategoryDialog({ open: false, category: '', limit: '' });
-      toast.success(`${category} added`);
+      toast.success(`${category} budget updated`);
     } catch (err) {
-      toast.error(err?.response?.data?.detail || 'Failed to create category');
+      toast.error(err?.response?.data?.detail || 'Failed to update budget');
     }
   }
 
@@ -277,13 +286,6 @@ export default function Budgets() {
                 ))}
               </SelectContent>
             </Select>
-            <Button
-              onClick={() => setAddCategoryDialog({ open: true, category: '', limit: '' })}
-              data-testid="add-category-btn"
-              className="w-full sm:w-auto bg-gradient-to-br from-indigo-600 to-purple-600 text-white rounded-2xl px-6 py-3 h-12 text-base font-semibold shadow-lg shadow-indigo-200 hover:shadow-xl hover:shadow-indigo-300 transition-all"
-            >
-              <Plus className="w-4 h-4 mr-2" /> Add Category
-            </Button>
           </div>
         </div>
 
@@ -564,18 +566,73 @@ export default function Budgets() {
       {/* ADD CATEGORY DIALOG */}
       <Dialog open={addCategoryDialog.open} onOpenChange={open => setAddCategoryDialog(d => ({ ...d, open }))}>
         <DialogContent className="rounded-[24px]" data-testid="add-category-dialog">
-          <DialogHeader><DialogTitle>Add Budget Category</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Update Category Budget</DialogTitle></DialogHeader>
           <div className="space-y-4 pt-2">
+            {/* Available budget info */}
+            {rb.is_set && rb.available_budget > 0 && (() => {
+              const selectedLimit = parseFloat(addCategoryDialog.limit || '0') || 0;
+              const existingLimit = budgets.find(b => b.category.toLowerCase() === (addCategoryDialog.category || '').toLowerCase())?.limit || 0;
+              const otherTotal = budgets.reduce((s, b) => b.category.toLowerCase() === (addCategoryDialog.category || '').toLowerCase() ? s : s + (b.limit || 0), 0);
+              const newTotal = otherTotal + selectedLimit;
+              const remainingAfter = rb.available_budget - newTotal;
+              const isExceeded = newTotal > rb.available_budget;
+              return (
+                <div className={`rounded-xl p-3 text-xs ${isExceeded ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                  {isExceeded
+                    ? `Budget limit exceeded. Please enter an amount within your remaining available budget.`
+                    : `Available: ${formatCurrency(rb.available_budget)} — Allocated: ${formatCurrency(newTotal)} — Remaining: ${formatCurrency(remainingAfter)}`}
+                </div>
+              );
+            })()}
             <div>
-              <Label htmlFor="new-category-name">Category Name</Label>
-              <Input id="new-category-name" value={addCategoryDialog.category} onChange={e => setAddCategoryDialog(d => ({ ...d, category: e.target.value }))} placeholder="e.g. Fitness, Pets, Gifts" data-testid="new-category-name-input" />
+              <Label htmlFor="new-category-select">Category</Label>
+              <Select
+                value={addCategoryDialog.category}
+                onValueChange={val => setAddCategoryDialog(d => ({ ...d, category: val }))}
+              >
+                <SelectTrigger id="new-category-select" data-testid="new-category-name-input">
+                  <SelectValue placeholder="Select a category" />
+                </SelectTrigger>
+                <SelectContent>
+                  {[
+                    'Food','Transport','Shopping','Entertainment','Utilities',
+                    'Healthcare','Rent','Education','Travel','Fitness','Pets','Savings','Other',
+                    ...budgets.map(b => b.category)
+                  ]
+                    .filter((c, i, arr) => arr.indexOf(c) === i)
+                    .sort()
+                    .map(cat => (
+                      <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
             </div>
             <div>
-              <Label htmlFor="new-category-limit">Budget Limit</Label>
-              <Input id="new-category-limit" type="number" min="0" step="0.01" value={addCategoryDialog.limit} onChange={e => setAddCategoryDialog(d => ({ ...d, limit: e.target.value }))} placeholder="0.00" data-testid="new-category-limit-input" />
+              <Label htmlFor="new-category-limit">Budget Limit (₹)</Label>
+              <Input
+                id="new-category-limit"
+                type="number"
+                min="0"
+                step="0.01"
+                value={addCategoryDialog.limit}
+                onChange={e => setAddCategoryDialog(d => ({ ...d, limit: e.target.value }))}
+                placeholder="0.00"
+                data-testid="new-category-limit-input"
+              />
             </div>
-            <p className="text-xs text-slate-400">This creates a custom category for {periodLabel}.</p>
-            <Button className="w-full bg-gradient-to-br from-indigo-600 to-purple-600 text-white rounded-xl" onClick={handleCreateCategory} data-testid="create-category-btn">Create Category</Button>
+            <Button
+              className="w-full bg-gradient-to-br from-indigo-600 to-purple-600 text-white rounded-xl disabled:opacity-50"
+              onClick={handleCreateCategory}
+              disabled={(() => {
+                if (!rb.is_set || rb.available_budget <= 0) return false;
+                const selectedLimit = parseFloat(addCategoryDialog.limit || '0') || 0;
+                const otherTotal = budgets.reduce((s, b) => b.category.toLowerCase() === (addCategoryDialog.category || '').toLowerCase() ? s : s + (b.limit || 0), 0);
+                return otherTotal + selectedLimit > rb.available_budget;
+              })()}
+              data-testid="create-category-btn"
+            >
+              Update Budget
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -585,12 +642,54 @@ export default function Budgets() {
         <DialogContent className="rounded-[24px]" data-testid="adjust-budget-dialog">
           <DialogHeader><DialogTitle>Adjust {adjustDialog.category} Budget</DialogTitle></DialogHeader>
           <div className="space-y-4 pt-2">
+            {rb.is_set && rb.available_budget > 0 && (() => {
+              const newLimit = parseFloat(adjustDialog.limit || '0') || 0;
+              const otherTotal = budgets.reduce((s, b) => b.category.toLowerCase() === adjustDialog.category.toLowerCase() ? s : s + (b.limit || 0), 0);
+              const newTotal = otherTotal + newLimit;
+              const isExceeded = newTotal > rb.available_budget;
+              return (
+                <div className={`rounded-xl p-3 text-xs ${isExceeded ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                  {isExceeded
+                    ? 'Budget limit exceeded. Please enter an amount within your remaining available budget.'
+                    : `Available: ${formatCurrency(rb.available_budget)} — Allocated: ${formatCurrency(newTotal)} — Remaining: ${formatCurrency(rb.available_budget - newTotal)}`}
+                </div>
+              );
+            })()}
             <div>
-              <Label htmlFor="new-limit">New Budget Limit</Label>
-              <Input id="new-limit" type="number" value={adjustDialog.limit} onChange={e => setAdjustDialog(a => ({ ...a, limit: e.target.value }))} data-testid="adjust-limit-input" />
+              <Label htmlFor="new-limit">New Budget Limit (₹)</Label>
+              <Input id="new-limit" type="number" min="0" step="0.01" value={adjustDialog.limit} onChange={e => setAdjustDialog(a => ({ ...a, limit: e.target.value }))} data-testid="adjust-limit-input" />
             </div>
-            <p className="text-xs text-slate-400">Backend budgets are auto-generated from historical data.</p>
-            <Button className="w-full bg-gradient-to-br from-indigo-600 to-purple-600 text-white rounded-xl" onClick={() => { toast.success(`${adjustDialog.category} budget noted`); setAdjustDialog({ open: false, category: '', limit: '' }); }} data-testid="adjust-save-btn">Save</Button>
+            <Button
+              className="w-full bg-gradient-to-br from-indigo-600 to-purple-600 text-white rounded-xl disabled:opacity-50"
+              disabled={(() => {
+                if (!rb.is_set || rb.available_budget <= 0) return false;
+                const newLimit = parseFloat(adjustDialog.limit || '0') || 0;
+                const otherTotal = budgets.reduce((s, b) => b.category.toLowerCase() === adjustDialog.category.toLowerCase() ? s : s + (b.limit || 0), 0);
+                return otherTotal + newLimit > rb.available_budget;
+              })()}
+              onClick={async () => {
+                const limit = parseFloat(adjustDialog.limit);
+                if (isNaN(limit) || limit < 0) { toast.error('Enter a valid amount'); return; }
+                if (rb.is_set && rb.available_budget > 0) {
+                  const otherTotal = budgets.reduce((s, b) => b.category.toLowerCase() === adjustDialog.category.toLowerCase() ? s : s + (b.limit || 0), 0);
+                  if (otherTotal + limit > rb.available_budget) {
+                    toast.error('Budget limit exceeded. Please enter an amount within your remaining available budget.');
+                    return;
+                  }
+                }
+                try {
+                  await api.postCustomBudgetCategory({ category: adjustDialog.category, limit, month: selectedMonth, year: selectedYear });
+                  await loadData(selectedMonth, selectedYear);
+                  setAdjustDialog({ open: false, category: '', limit: '' });
+                  toast.success(`${adjustDialog.category} budget updated to ${formatCurrency(limit)}`);
+                } catch (err) {
+                  toast.error(err?.response?.data?.detail || 'Failed to update budget');
+                }
+              }}
+              data-testid="adjust-save-btn"
+            >
+              Save
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
