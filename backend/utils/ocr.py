@@ -137,8 +137,23 @@ def extract_amount_with_scoring(lines: List[str], normalized_text: str) -> Tuple
     total_keywords = [
         'grand total', 'net total', 'total amount', 'amount payable',
         'bill amount', 'final amount', 'total payable', 'amount due',
-        'net amount', 'payable amount', 'final total', 'net payable'
+        'net amount', 'payable amount', 'final total', 'net payable',
+        'total bill', 'bill total', 'invoice total', 'net bill'
     ]
+    # Stronger currency-prefixed amount extraction first
+    currency_candidates = []
+    for c in candidates:
+        line = c['line_text']
+        if re.search(r'[₹\$][\s]*\d', line) or re.search(r'\brs\.?\s*\d', line.lower()):
+            currency_candidates.append(c)
+    
+    # If we have currency-prefixed amounts, prefer the largest one near end of receipt
+    if currency_candidates:
+        currency_candidates.sort(key=lambda x: (x['line_index'], x['value']), reverse=True)
+        # Pick highest value currency-prefixed amount
+        best_currency = max(currency_candidates, key=lambda x: x['value'])
+        logger.debug("[CURRENCY] Selected amount %.2f from line %s", best_currency['value'], best_currency['line_index'])
+        return best_currency['value'], 0.90
     exclude_keywords = ['subtotal', 'sub total', 'cgst', 'sgst', 'igst', 'tax', 'gst']
 
     total_lines = []

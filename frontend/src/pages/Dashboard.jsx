@@ -734,6 +734,7 @@ export default function Dashboard() {
           <RollingBudgetCard
             month={selectedMonth}
             year={selectedYear}
+            data={rollingBudget}
             onBudgetChange={() => loadData(selectedMonth, selectedYear)}
           />
 
@@ -794,6 +795,8 @@ export default function Dashboard() {
         open={showReceiptScan}
         onClose={() => setShowReceiptScan(false)}
         onExpenseCreated={loadData}
+        selectedMonth={selectedMonth}
+        selectedYear={selectedYear}
       />
 
       <style>{`

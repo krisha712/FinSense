@@ -11,9 +11,9 @@ import { Pencil, TrendingUp, TrendingDown, Info } from 'lucide-react';
 import { formatCurrency } from '@/utils/formatCurrency';
 import * as api from '@/lib/api';
 
-export default function RollingBudgetCard({ month, year, onBudgetChange }) {
+export default function RollingBudgetCard({ month, year, onBudgetChange, data: externalData }) {
   const [budgetData, setBudgetData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!externalData);
   const [editOpen, setEditOpen] = useState(false);
   const [editAmount, setEditAmount] = useState('');
   const [saving, setSaving] = useState(false);
@@ -25,13 +25,19 @@ export default function RollingBudgetCard({ month, year, onBudgetChange }) {
       setBudgetData(res?.data || null);
     } catch (e) {
       console.error('RollingBudgetCard load error:', e);
-      setBudgetData(null); // will show default "not set" state
+      setBudgetData(null);
     } finally {
       setLoading(false);
     }
   }, [month, year]);
 
-  useEffect(() => { load(); }, [load]);
+  // Only self-fetch if no external data provided
+  useEffect(() => {
+    if (!externalData) load();
+  }, [load, externalData]);
+
+  // Use external data when provided (keeps in sync with parent)
+  const activeData = externalData || budgetData;
 
   async function handleSave() {
     const amount = parseFloat(editAmount);
@@ -54,11 +60,11 @@ export default function RollingBudgetCard({ month, year, onBudgetChange }) {
   }
 
   function openEdit() {
-    setEditAmount(budgetData?.budget_amount?.toString() || '');
+    setEditAmount(activeData?.budget_amount?.toString() || '');
     setEditOpen(true);
   }
 
-  if (loading) {
+  if (loading && !externalData) {
     return (
       <Card className="rounded-[24px] border-0 bg-white shadow-sm p-6 animate-pulse">
         <div className="h-4 bg-slate-100 rounded w-1/3 mb-4" />
@@ -68,8 +74,7 @@ export default function RollingBudgetCard({ month, year, onBudgetChange }) {
     );
   }
 
-  // Show a "not set" state if data is null or budget not set
-  const d = budgetData ?? {
+  const d = activeData ?? {
     month,
     year,
     label: `${['','January','February','March','April','May','June','July','August','September','October','November','December'][month]} ${year}`,

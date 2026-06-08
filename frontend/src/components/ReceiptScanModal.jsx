@@ -21,7 +21,7 @@ const CATEGORIES = [
   'Healthcare', 'Utilities', 'Travel', 'Education', 'Rent', 'Other'
 ];
 
-export default function ReceiptScanModal({ open, onClose, onExpenseCreated }) {
+export default function ReceiptScanModal({ open, onClose, onExpenseCreated, selectedMonth, selectedYear }) {
   const [loading, setLoading] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [extractedData, setExtractedData] = useState(null);
@@ -71,9 +71,26 @@ export default function ReceiptScanModal({ open, onClose, onExpenseCreated }) {
           rawTextPreview: response.data.raw_text_preview || '',
           merchant: extracted.merchant || '',
         });
+
+        // Use receipt date only if it matches the currently selected month,
+        // otherwise default to the 1st of the selected month
+        let useDate = extracted.date || new Date().toISOString().split('T')[0];
+        if (selectedMonth && selectedYear) {
+          const d = new Date(useDate);
+          if (d.getFullYear() !== selectedYear || d.getMonth() + 1 !== selectedMonth) {
+            // Default to today if today is in selected month, else 1st of selected month
+            const today = new Date();
+            if (today.getFullYear() === selectedYear && today.getMonth() + 1 === selectedMonth) {
+              useDate = today.toISOString().split('T')[0];
+            } else {
+              useDate = `${selectedYear}-${String(selectedMonth).padStart(2,'0')}-01`;
+            }
+          }
+        }
+
         setFormData({
           amount: extracted.amount?.toString() || '',
-          date: extracted.date || new Date().toISOString().split('T')[0],
+          date: useDate,
           category: extracted.category || 'Other',
           description: extracted.description || extracted.merchant || ''
         });
@@ -171,12 +188,12 @@ export default function ReceiptScanModal({ open, onClose, onExpenseCreated }) {
 
   return (
     <Dialog open={open} onOpenChange={handleCancel}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>Scan Receipt</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="space-y-4 overflow-y-auto flex-1 pr-1">
           {/* File Upload */}
           {!extractedData && !scanning && (
             <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
