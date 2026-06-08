@@ -43,6 +43,7 @@ from routes.expense_routes import router as expense_router
 from routes.analytics_routes import router as analytics_router
 from routes.insights_routes import router as insights_router
 from routes.google_auth_routes import router as google_auth_router
+from routes.rolling_budget_routes import router as rolling_budget_router
 
 # Include routers
 app.include_router(auth_router)
@@ -51,6 +52,7 @@ app.include_router(user_router)
 app.include_router(expense_router)
 app.include_router(analytics_router)
 app.include_router(insights_router)
+app.include_router(rolling_budget_router)
 
 @app.on_event("startup")
 async def startup_event():
@@ -58,6 +60,9 @@ async def startup_event():
     logger.info("FinSense API v3.0 Starting...")
     logger.info("=" * 60)
     
+    # Import all models so Base.metadata is complete
+    import models  # noqa: F401
+
     # Initialize database tables
     init_db()
     logger.info("Database initialized")

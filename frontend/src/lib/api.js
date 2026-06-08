@@ -156,6 +156,28 @@ export async function postCustomBudgetCategory(payload) {
   return r.data;
 }
 
+// ==================== Rolling Monthly Budget ====================
+
+export async function getRollingBudget(month, year) {
+  try {
+    const params = {};
+    if (month != null) params.month = month;
+    if (year != null) params.year = year;
+    const r = await axios.get(`${API}/rolling-budget`, { params });
+    return r.data || { data: {}, metadata: {}, error: null };
+  } catch (e) {
+    console.error('getRollingBudget error:', e);
+    return { data: null, metadata: {}, error: e.message };
+  }
+}
+
+export async function setRollingBudget(month, year, budget_amount) {
+  const r = await axios.post(`${API}/rolling-budget`, { month, year, budget_amount }, {
+    headers: { 'Content-Type': 'application/json' },
+  });
+  return r.data;
+}
+
 // ==================== Anomalies ====================
 
 export async function getAnomalies() {

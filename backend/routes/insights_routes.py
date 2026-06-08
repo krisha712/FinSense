@@ -118,6 +118,11 @@ async def forecast_lstm(
     engine = InsightsEngine(df, df_agg)
     return engine.get_forecast(days_ahead=30)
 
+DEFAULT_CATEGORIES = [
+    'Food', 'Transport', 'Shopping', 'Entertainment',
+    'Utilities', 'Healthcare', 'Rent', 'Education', 'Travel', 'Other'
+]
+
 @router.get("/budget/smart")
 async def get_smart_budget(
     month: Optional[int] = None,
@@ -127,22 +132,29 @@ async def get_smart_budget(
 ):
     expenses = get_filtered_expenses(db, current_user)
     df = expenses_to_dataframe(expenses)
-    
-    if df.empty:
-        return {
-            "data": {"budget": [], "total": 0},
-            "metadata": {},
-            "error": "No data"
-        }
-    
-    df_agg = aggregate_time_series(df)
-    engine = InsightsEngine(df, df_agg)
-    
+
     if month is None or year is None:
         from datetime import datetime
         now = datetime.now()
         month, year = now.month, now.year
-    
+
+    if df.empty:
+        # Return default categories with zero values
+        budgets = [
+            {"category": cat, "limit": 0.0, "current": 0.0, "percentage": 0.0,
+             "basis": "default", "hist_mean": 0, "hist_std": 0, "months_of_data": 0,
+             "is_custom": False, "icon_emoji": None}
+            for cat in DEFAULT_CATEGORIES
+        ]
+        return {
+            "data": {"budget": budgets, "total": 0},
+            "metadata": {"month": month, "year": year},
+            "error": None
+        }
+
+    df_agg = aggregate_time_series(df)
+    engine = InsightsEngine(df, df_agg)
+
     result = engine.get_current_budgets(month, year)
     custom_categories = db.query(CustomBudgetCategory).filter(
         CustomBudgetCategory.user_id == current_user.id,
@@ -158,6 +170,25 @@ async def get_smart_budget(
     if not cur_df.empty:
         grouped = cur_df.groupby("category")["amount"].sum().to_dict()
         current_lookup = {str(k).lower(): round(float(v), 2) for k, v in grouped.items()}
+
+    # Inject default categories that are missing (with ₹0 spent)
+    for cat in DEFAULT_CATEGORIES:
+        key = cat.lower()
+        if key not in by_category:
+            current = current_lookup.get(key, 0.0)
+            budgets.append({
+                "category": cat,
+                "limit": 0.0,
+                "current": current,
+                "percentage": 0.0,
+                "basis": "default",
+                "hist_mean": 0,
+                "hist_std": 0,
+                "months_of_data": 0,
+                "is_custom": False,
+                "icon_emoji": None,
+            })
+            by_category[key] = budgets[-1]
 
     for custom in custom_categories:
         key = custom.category.lower()

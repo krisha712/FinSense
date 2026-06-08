@@ -25,6 +25,7 @@ import * as api from '@/lib/api';
 import Navbar from '@/components/Navbar';
 import UserMenu from '@/components/UserMenu';
 import ReceiptScanModal from '@/components/ReceiptScanModal';
+import RollingBudgetCard from '@/components/RollingBudgetCard';
 import logo from '@/assets/logo.png';
 import { useTrendMode } from '@/context/TrendModeContext';
 import { getTrendSnapshot, getWeeksInMonth } from '@/lib/trendUtils';
@@ -52,6 +53,7 @@ export default function Dashboard() {
   const [insights, setInsights] = useState([]);
   const [analytics, setAnalytics] = useState({ data: { total_monthly: 0, by_category: [], comparison: null }, metadata: {} });
   const [budgets, setBudgets] = useState([]);
+  const [rollingBudget, setRollingBudget] = useState(null);
   const [showAddExpense, setShowAddExpense] = useState(false);
   const [showReceiptScan, setShowReceiptScan] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -186,11 +188,12 @@ export default function Dashboard() {
       const currentMonth = now.getMonth() + 1;
       const currentYear = now.getFullYear();
 
-      const [exp, insightsRes, an, budg] = await Promise.all([
+      const [exp, insightsRes, an, budg, rollingRes] = await Promise.all([
         api.getExpenses(),
         api.getSuggestions(),
         api.getAnalyticsSpending(currentMonth, currentYear),
-        api.getBudgets(currentMonth, currentYear)
+        api.getBudgets(currentMonth, currentYear),
+        api.getRollingBudget(currentMonth, currentYear),
       ]);
       
       console.log('[LOAD DATA] Raw expenses received:', exp?.length || 0);
@@ -212,6 +215,7 @@ export default function Dashboard() {
       setInsights(insightsRes?.data || []);
       setAnalytics(an || { data: { total_monthly: 0, by_category: [], comparison: null }, metadata: {} });
       setBudgets(budg?.data?.budget || []);
+      setRollingBudget(rollingRes?.data || null);
     } catch (err) {
       console.error('[LOAD DATA] Error:', err);
       toast.error('Failed to load data');
@@ -335,9 +339,11 @@ export default function Dashboard() {
     ? snapshot.label
     : (analytics?.metadata?.label || analytics?.metadata?.current_period || 'Current');
   const totalBudget = budgets.reduce((s, b) => s + (b.limit || 0), 0);
+  // Use rolling budget's available_budget if set, otherwise fall back to category budgets total
+  const rollingAvailable = rollingBudget?.is_set ? rollingBudget.available_budget : null;
   const displayBudget = trendMode === 'weekly'
-    ? totalBudget / getWeeksInMonth(snapshot.referenceDate)
-    : totalBudget;
+    ? (rollingAvailable ?? totalBudget) / getWeeksInMonth(snapshot.referenceDate)
+    : (rollingAvailable ?? totalBudget);
   const budgetRemaining = Math.max(0, displayBudget - totalSpent);
   const budgetUsedPct = displayBudget > 0 ? (totalSpent / displayBudget * 100) : 0;
   const savingsBudget = (budgets.find(b => b.category?.toLowerCase() === 'savings')?.limit || 0) / (trendMode === 'weekly' ? getWeeksInMonth(snapshot.referenceDate) : 1);
@@ -669,48 +675,12 @@ export default function Dashboard() {
             </Card>
           </div>
 
-          {/* BUDGETS */}
-          <Card className="rounded-[24px] border-0 shadow-sm bg-white p-6" data-testid="budgets-card">
-            <div className="flex items-center gap-2 mb-4">
-              <div className="h-8 w-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-500"><Target className="w-4 h-4" /></div>
-              <div>
-                <p className="text-sm font-semibold text-slate-900">Budget Tracking</p>
-                <p className="text-xs text-slate-400">{periodLabel}</p>
-              </div>
-            </div>
-            <div className="space-y-4">
-              {budgets.length > 0 ? budgets.map((budget, idx) => {
-                const pct = budget.percentage || 0;
-                const over = pct > 100;
-                const warn = pct >= 70 && pct <= 100;
-                const barColor = over ? 'bg-red-500' : warn ? 'bg-amber-500' : 'bg-emerald-500';
-                const textColor = over ? 'text-red-600' : warn ? 'text-amber-600' : 'text-emerald-600';
-                const bgColor = over ? 'bg-red-50' : warn ? 'bg-amber-50' : 'bg-emerald-50';
-                return (
-                  <div key={idx} className={`p-3 rounded-[16px] ${bgColor}`} data-testid={`budget-${budget.category}`}>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-semibold text-slate-700">{budget.category}</span>
-                      <span className={`text-xs font-bold ${textColor}`}>{pct.toFixed(0)}%</span>
-                    </div>
-                    <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
-                      <div className={`h-full ${barColor} transition-all duration-300 rounded-full`} style={{ width: `${Math.min(pct, 100)}%` }} />
-                    </div>
-                    <div className="flex items-center justify-between mt-2 text-[11px] text-slate-500">
-                      <span>{formatCurrency(budget.current || 0)}</span>
-                      <span>of {formatCurrency(budget.limit || 0)}</span>
-                    </div>
-                  </div>
-                );
-              }) : (
-                <div className="text-center py-6"><p className="text-xs text-slate-400">No budget data</p></div>
-              )}
-            </div>
-            {budgets.length > 0 && (
-              <div className="mt-4 pt-4 border-t border-slate-100">
-                <button onClick={() => navigate('/budgets')} className="text-xs text-indigo-600 hover:text-indigo-700 font-semibold">Manage budgets &rarr;</button>
-              </div>
-            )}
-          </Card>
+          {/* ROLLING BUDGET */}
+          <RollingBudgetCard
+            month={new Date().getMonth() + 1}
+            year={new Date().getFullYear()}
+            onBudgetChange={loadData}
+          />
 
         </div>
       </main>
